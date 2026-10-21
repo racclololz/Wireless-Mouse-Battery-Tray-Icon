@@ -10,10 +10,10 @@ internal static class Program
     {
         if (args.Any(a => string.Equals(a, "--once", StringComparison.OrdinalIgnoreCase)))
         {
-            var reading = BatteryReader.TryRead();
+            var reading = BatteryReader.TryRead(MouseChoice.Load());
             if (reading is null)
             {
-                Console.Error.WriteLine("OP1w battery not available.");
+                Console.Error.WriteLine("Battery not available.");
                 return 1;
             }
 
@@ -23,7 +23,7 @@ internal static class Program
 
         if (args.Any(a => string.Equals(a, "--diag", StringComparison.OrdinalIgnoreCase)))
         {
-            foreach (var line in BatteryReader.Diagnose())
+            foreach (var line in BatteryReader.Diagnose(MouseChoice.Load()))
                 Console.WriteLine(line);
             return 0;
         }

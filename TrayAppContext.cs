@@ -24,6 +24,10 @@ internal sealed class TrayAppContext : ApplicationContext
     private bool _displayedConnected;
     private DateTime _lastReadUtc = DateTime.MinValue;
     private bool _refreshInProgress;
+    private MouseChoice? _mouse = MouseChoice.Load();
+    private MouseSetupForm? _setupForm;
+
+    private string MouseName => _mouse?.Name ?? "OP1w";
 
     public TrayAppContext()
     {
@@ -34,16 +38,20 @@ internal sealed class TrayAppContext : ApplicationContext
         };
         _startupMenuItem.CheckedChanged += (_, _) => SetStartupEnabled(_startupMenuItem.Checked);
 
+        var chooseMouseItem = new ToolStripMenuItem("Choose mouse...");
+        chooseMouseItem.Click += (_, _) => ShowMouseSetup();
+
         var exitItem = new ToolStripMenuItem("Exit");
         exitItem.Click += (_, _) => ExitThread();
 
         _notifyIcon = new NotifyIcon
         {
-            Text = "OP1w battery: checking...",
+            Text = $"{MouseName}: checking...",
             Icon = CreateIcon(null, false),
             Visible = true,
             ContextMenuStrip = new ContextMenuStrip()
         };
+        _notifyIcon.ContextMenuStrip.Items.Add(chooseMouseItem);
         _notifyIcon.ContextMenuStrip.Items.Add(_startupMenuItem);
         _notifyIcon.ContextMenuStrip.Items.Add(new ToolStripSeparator());
         _notifyIcon.ContextMenuStrip.Items.Add(exitItem);
@@ -57,6 +65,7 @@ internal sealed class TrayAppContext : ApplicationContext
 
     private async Task PollLoopAsync(CancellationToken cancellationToken)
     {
+        if (!MouseChoice.Exists && !await Task.Run(Op1w.IsPresent)) ShowMouseSetup();
         await RefreshWithoutStoppingPollLoopAsync();
 
         while (!cancellationToken.IsCancellationRequested)
@@ -93,25 +102,34 @@ internal sealed class TrayAppContext : ApplicationContext
 
         try
         {
-            if (_lastPercent is null) _notifyIcon.Text = "OP1w battery: checking...";
+            if (_lastPercent is null) _notifyIcon.Text = $"{MouseName}: checking...";
 
-            var reading = await Task.Run(ReadWithRetries);
+            var mouse = _mouse;
+            var reading = await Task.Run(() => ReadWithRetries(mouse));
+            if (mouse != _mouse) return;
             if (reading is null)
             {
-                if (_lastPercent is int percent && DateTime.UtcNow - _lastReadUtc < TimeSpan.FromMilliseconds(StaleAfterMs))
+                if (_lastPercent is not int percent)
                 {
-                    UpdateIcon(percent, true, $"OP1w: {percent}%");
+                    UpdateIcon(null, false, $"{MouseName}: no battery value");
                     return;
                 }
 
-                _lastPercent = null;
-                UpdateIcon(null, false, "OP1w: unavailable");
+                var age = DateTime.UtcNow - _lastReadUtc;
+                if (age < TimeSpan.FromMilliseconds(StaleAfterMs))
+                {
+                    UpdateIcon(percent, true, $"{MouseName}: {percent}%");
+                    return;
+                }
+
+                // Grey icon keeps the last real value so an asleep/off mouse is not shown as unknown.
+                UpdateIcon(percent, false, $"{MouseName}: off or asleep (last {percent}%, {FormatAge(age)} ago)");
                 return;
             }
 
             _lastPercent = reading.Percent;
             _lastReadUtc = DateTime.UtcNow;
-            UpdateIcon(reading.Percent, true, $"OP1w: {reading.Percent}%");
+            UpdateIcon(reading.Percent, true, $"{MouseName}: {reading.Percent}%");
         }
         finally
         {
@@ -119,14 +137,44 @@ internal sealed class TrayAppContext : ApplicationContext
         }
     }
 
-    private static BatteryReading? ReadWithRetries()
+    private static string FormatAge(TimeSpan age) =>
+        age.TotalHours >= 1 ? $"{(int)age.TotalHours} h" : $"{(int)age.TotalMinutes} min";
+
+    private void ShowMouseSetup()
+    {
+        if (_setupForm is not null)
+        {
+            _setupForm.Activate();
+            return;
+        }
+
+        using var form = new MouseSetupForm();
+        _setupForm = form;
+        try
+        {
+            if (form.ShowDialog() != DialogResult.OK || form.Choice is null) return;
+            form.Choice.Save();
+            _mouse = form.Choice;
+            _lastPercent = null;
+            _lastReadUtc = DateTime.MinValue;
+            _refreshInProgress = false;
+        }
+        finally
+        {
+            _setupForm = null;
+        }
+
+        _ = RefreshWithoutStoppingPollLoopAsync();
+    }
+
+    private static BatteryReading? ReadWithRetries(MouseChoice? mouse)
     {
         for (var attempt = 0; attempt < 3; attempt++)
         {
             BatteryReading? reading = null;
             try
             {
-                reading = BatteryReader.TryRead();
+                reading = BatteryReader.TryRead(mouse);
             }
             catch
             {
