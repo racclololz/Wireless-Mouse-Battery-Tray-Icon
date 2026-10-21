@@ -53,9 +53,10 @@ internal static class TrayIcon
         var bounds = text.GetBounds();
         if (bounds.Width <= 0 || bounds.Height <= 0) return bitmap;
 
-        // Largest uniform scale that fits; never stretched.
-        var padX = Math.Max(0.5f, size * 0.03f);
-        var padY = Math.Max(1f, size * 0.12f);
+        // Largest uniform scale that fits with its outline; never stretched.
+        var outline = Math.Max(1.5f, size * 0.08f);
+        var padX = outline / 2;
+        var padY = Math.Max(outline / 2, size * 0.1f);
         var scale = Math.Min((size - 2 * padY) / bounds.Height, (size - 2 * padX) / bounds.Width);
         using var matrix = new Matrix();
         matrix.Translate(size / 2f, size / 2f);
@@ -63,12 +64,11 @@ internal static class TrayIcon
         matrix.Translate(-(bounds.X + bounds.Width / 2), -(bounds.Y + bounds.Height / 2));
         text.Transform(matrix);
 
-        using var textBrush = new SolidBrush(Luminance(fill) > 0.6 ? Color.Black : Color.White);
-        g.FillPath(textBrush, text);
+        using (var pen = new Pen(Color.FromArgb(220, 0, 0, 0), outline) { LineJoin = LineJoin.Round })
+            g.DrawPath(pen, text);
+        g.FillPath(Brushes.White, text);
         return bitmap;
     }
-
-    private static double Luminance(Color c) => (0.299 * c.R + 0.587 * c.G + 0.114 * c.B) / 255;
 
     private static string PickFont(params string[] names)
     {
