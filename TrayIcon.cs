@@ -8,7 +8,8 @@ namespace WirelessMouseBatteryTray;
 internal static class TrayIcon
 {
     private const int SM_CXSMICON = 49;
-    private static readonly string DigitFont = PickFont("Bahnschrift SemiBold", "Bahnschrift", "Segoe UI");
+    // Segoe UI digits are wide and open, which reads better at 16 px than taller DIN-style fonts.
+    private static readonly string DigitFont = PickFont("Segoe UI", "Arial");
 
     public static int TaskbarIconSize()
     {
@@ -52,14 +53,13 @@ internal static class TrayIcon
         var bounds = text.GetBounds();
         if (bounds.Width <= 0 || bounds.Height <= 0) return bitmap;
 
-        // Digits fill the full height; three digits are narrowed instead of shrunk.
-        var padX = Math.Max(1f, size * 0.06f);
+        // Largest uniform scale that fits; never stretched.
+        var padX = Math.Max(0.5f, size * 0.03f);
         var padY = Math.Max(1f, size * 0.12f);
-        var scaleY = (size - 2 * padY) / bounds.Height;
-        var scaleX = Math.Min(scaleY, (size - 2 * padX) / bounds.Width);
+        var scale = Math.Min((size - 2 * padY) / bounds.Height, (size - 2 * padX) / bounds.Width);
         using var matrix = new Matrix();
         matrix.Translate(size / 2f, size / 2f);
-        matrix.Scale(scaleX, scaleY);
+        matrix.Scale(scale, scale);
         matrix.Translate(-(bounds.X + bounds.Width / 2), -(bounds.Y + bounds.Height / 2));
         text.Transform(matrix);
 
