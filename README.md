@@ -23,6 +23,8 @@ To update, do the same with the new version.
 
 Hover over the icon for details. Right-click it for options, including a low battery alert.
 
+To open your mouse software with a left click on the icon, right-click the icon, then **Left click > Choose app...**.
+
 ## Supported mice
 
 - Logitech (Unifying, Bolt, Lightspeed, cable, Bluetooth)

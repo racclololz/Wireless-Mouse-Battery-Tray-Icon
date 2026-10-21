@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace WirelessMouseBatteryTray;
 
-internal sealed record AppSettings(bool LowBatteryAlert = false)
+internal sealed record AppSettings(bool LowBatteryAlert = false, string? LeftClickApp = null)
 {
     private static readonly string FilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WirelessMouseBatteryTray", "settings.json");

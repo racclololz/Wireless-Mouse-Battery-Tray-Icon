@@ -18,7 +18,6 @@ internal sealed record VendorFeatureDevice(
     string FreshStatus,
     int PercentOffset,
     int? VoltageOffset,
-    string? ConfigTool,
     bool AllProducts = false)
 {
     public ushort VendorId => Hex16(Vid);

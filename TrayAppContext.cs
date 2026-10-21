@@ -16,6 +16,8 @@ internal sealed class TrayAppContext : ApplicationContext
     private readonly NotifyIcon _notifyIcon;
     private readonly ToolStripMenuItem _startupMenuItem;
     private readonly ToolStripMenuItem _alertMenuItem;
+    private readonly ToolStripMenuItem _leftClickMenuItem;
+    private readonly ToolStripMenuItem _removeAppMenuItem;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly BatteryTracker _tracker = new();
     private Icon? _currentIcon;
@@ -51,6 +53,14 @@ internal sealed class TrayAppContext : ApplicationContext
             _settings.Save();
         };
 
+        _leftClickMenuItem = new ToolStripMenuItem();
+        var chooseAppItem = new ToolStripMenuItem("Choose app...");
+        chooseAppItem.Click += (_, _) => ChooseLeftClickApp();
+        _removeAppMenuItem = new ToolStripMenuItem("Remove");
+        _removeAppMenuItem.Click += (_, _) => SaveLeftClickApp(null);
+        _leftClickMenuItem.DropDownItems.AddRange(new ToolStripItem[] { chooseAppItem, _removeAppMenuItem });
+        UpdateLeftClickMenu();
+
         var chooseMouseItem = new ToolStripMenuItem("Choose mouse...");
         chooseMouseItem.Click += (_, _) => ShowMouseSetup();
 
@@ -72,11 +82,11 @@ internal sealed class TrayAppContext : ApplicationContext
         };
         _notifyIcon.ContextMenuStrip.Items.AddRange(new ToolStripItem[]
         {
-            chooseMouseItem, _alertMenuItem, _startupMenuItem, refreshItem, reportItem, new ToolStripSeparator(), exitItem
+            chooseMouseItem, _leftClickMenuItem, _alertMenuItem, _startupMenuItem, refreshItem, reportItem, new ToolStripSeparator(), exitItem
         });
         _notifyIcon.MouseClick += (_, e) =>
         {
-            if (e.Button == MouseButtons.Left) OpenConfigurationTool();
+            if (e.Button == MouseButtons.Left) OpenLeftClickApp();
         };
 
         _deviceWatcher = new DeviceChangeWindow(OnDevicesChanged);
@@ -324,28 +334,51 @@ internal sealed class TrayAppContext : ApplicationContext
         return value.Length >= 2 && value[0] == '"' && value[^1] == '"' ? value[1..^1] : value;
     }
 
-    // Opens a maker's configuration tool (named in devices.json) if it was placed beside the app.
-    private static void OpenConfigurationTool()
+    private void UpdateLeftClickMenu()
     {
-        var toolPath = DeviceList.VendorFeature
-            .Select(d => d.ConfigTool)
-            .OfType<string>()
-            .Select(name => Path.Combine(AppContext.BaseDirectory, name))
-            .FirstOrDefault(File.Exists);
-        if (toolPath is null) return;
+        var app = _settings.LeftClickApp;
+        _leftClickMenuItem.Text = app is null ? "Left click: nothing" : $"Left click: {Path.GetFileNameWithoutExtension(app)}";
+        _removeAppMenuItem.Enabled = app is not null;
+    }
+
+    private void SaveLeftClickApp(string? path)
+    {
+        _settings = _settings with { LeftClickApp = path };
+        _settings.Save();
+        UpdateLeftClickMenu();
+    }
+
+    private void ChooseLeftClickApp()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Title = "Choose the app that opens when you left-click the battery icon",
+            Filter = "Apps and shortcuts (*.exe;*.lnk)|*.exe;*.lnk|All files (*.*)|*.*",
+            DereferenceLinks = false,
+            InitialDirectory = _settings.LeftClickApp is { } current && Path.GetDirectoryName(current) is { } folder && Directory.Exists(folder)
+                ? folder
+                : Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles)
+        };
+        if (dialog.ShowDialog() == DialogResult.OK) SaveLeftClickApp(dialog.FileName);
+    }
+
+    private void OpenLeftClickApp()
+    {
+        if (_settings.LeftClickApp is not { } app) return;
 
         try
         {
             Process.Start(new ProcessStartInfo
             {
-                FileName = toolPath,
-                WorkingDirectory = AppContext.BaseDirectory,
+                FileName = app,
+                WorkingDirectory = Path.GetDirectoryName(app) ?? "",
                 UseShellExecute = true
             });
         }
-        catch
+        catch (Exception error)
         {
-            // Keep the tray app battery-only if the optional vendor tool fails to launch.
+            AppLog.Write($"left-click app failed: {error.Message}");
+            MessageBox.Show($"Could not open {Path.GetFileName(app)}:\n{error.Message}", Installer.DisplayName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 }
