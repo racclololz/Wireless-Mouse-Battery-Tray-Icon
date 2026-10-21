@@ -66,6 +66,33 @@ internal static class Devices
         return data is { Length: 1 } && data[0] <= 100 ? data[0] : null;
     }
 
+    // USB "VID_046D&PID_C539", Bluetooth classic "VID&0002046D_PID&B023", Bluetooth LE "VID&02046D_PID&B023".
+    private static readonly System.Text.RegularExpressions.Regex IdsPattern = new(
+        @"VID[_&](?:00)?(?:02)?([0-9A-F]{4})[_&]PID[_&]([0-9A-F]{4})",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    public static (ushort Vid, ushort Pid)? ParseIds(string idOrPath)
+    {
+        var match = IdsPattern.Match(idOrPath);
+        return match.Success
+            ? (Convert.ToUInt16(match.Groups[1].Value, 16), Convert.ToUInt16(match.Groups[2].Value, 16))
+            : null;
+    }
+
+    public static HIDP_CAPS? HidCaps(string path)
+    {
+        using var handle = OpenHid(path, 0);
+        if (handle.IsInvalid || !HidD_GetPreparsedData(handle, out var preparsed)) return null;
+        try
+        {
+            return HidP_GetCaps(preparsed, out var caps) == HIDP_STATUS_SUCCESS ? caps : null;
+        }
+        finally
+        {
+            HidD_FreePreparsedData(preparsed);
+        }
+    }
+
     // "HID\VID_3367&PID_1970&MI_00\8&E8AEDBA&0&0000" -> "HID\VID_3367&PID_1970&MI_00": stable across reboots; Bluetooth keys include the address.
     public static string DeviceKey(string instanceId)
     {

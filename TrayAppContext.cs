@@ -10,24 +10,30 @@ internal sealed class TrayAppContext : ApplicationContext
 {
     internal const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     internal const string RunValueName = "WirelessMouseBatteryTray";
-    private const string ConfigToolFileName = "Endgame_Gear_OP1w_4k_v2_Configuration_Tool_v1_02.exe";
     private const int IconSize = 128;
     private const int PollIntervalMs = 60_000;
     private const int StaleAfterMs = 5 * PollIntervalMs;
 
+    private static readonly Color Grey = Color.FromArgb(120, 120, 120);
+    private static readonly Color Blue = Color.FromArgb(0, 120, 215);
+
     private readonly NotifyIcon _notifyIcon;
     private readonly ToolStripMenuItem _startupMenuItem;
+    private readonly ToolStripMenuItem _alertMenuItem;
     private readonly CancellationTokenSource _shutdown = new();
+    private readonly BatteryTracker _tracker = new();
     private Icon? _currentIcon;
-    private int? _lastPercent;
-    private int? _displayedPercent;
-    private bool _displayedConnected;
+    private (int? Percent, Color Fill)? _displayed;
     private DateTime _lastReadUtc = DateTime.MinValue;
     private bool _refreshInProgress;
     private MouseChoice? _mouse = MouseChoice.Load();
+    private AppSettings _settings = AppSettings.Load();
     private MouseSetupForm? _setupForm;
+    private string? _deviceName;
+    private readonly DeviceChangeWindow _deviceWatcher;
+    private int _deviceChangeVersion;
 
-    private string MouseName => _mouse?.Name ?? "Mouse";
+    private string MouseName => _deviceName ?? _mouse?.Name ?? "Mouse";
 
     public TrayAppContext()
     {
@@ -38,8 +44,25 @@ internal sealed class TrayAppContext : ApplicationContext
         };
         _startupMenuItem.CheckedChanged += (_, _) => SetStartupEnabled(_startupMenuItem.Checked);
 
+        _alertMenuItem = new ToolStripMenuItem($"Alert at {BatteryTracker.LowThreshold}%")
+        {
+            CheckOnClick = true,
+            Checked = _settings.LowBatteryAlert
+        };
+        _alertMenuItem.CheckedChanged += (_, _) =>
+        {
+            _settings = _settings with { LowBatteryAlert = _alertMenuItem.Checked };
+            _settings.Save();
+        };
+
         var chooseMouseItem = new ToolStripMenuItem("Choose mouse...");
         chooseMouseItem.Click += (_, _) => ShowMouseSetup();
+
+        var refreshItem = new ToolStripMenuItem("Refresh now");
+        refreshItem.Click += async (_, _) => await RefreshWithoutStoppingPollLoopAsync();
+
+        var reportItem = new ToolStripMenuItem("Create report...");
+        reportItem.Click += async (_, _) => await CreateReportAsync();
 
         var exitItem = new ToolStripMenuItem("Exit");
         exitItem.Click += (_, _) => ExitThread();
@@ -47,28 +70,53 @@ internal sealed class TrayAppContext : ApplicationContext
         _notifyIcon = new NotifyIcon
         {
             Text = $"{MouseName}: checking...",
-            Icon = CreateIcon(null, false),
+            Icon = CreateIcon(null, Grey),
             Visible = true,
             ContextMenuStrip = new ContextMenuStrip()
         };
-        _notifyIcon.ContextMenuStrip.Items.Add(chooseMouseItem);
-        _notifyIcon.ContextMenuStrip.Items.Add(_startupMenuItem);
-        var refreshItem = new ToolStripMenuItem("Refresh now");
-        refreshItem.Click += async (_, _) => await RefreshWithoutStoppingPollLoopAsync();
-        _notifyIcon.ContextMenuStrip.Items.Add(refreshItem);
-        _notifyIcon.ContextMenuStrip.Items.Add(new ToolStripSeparator());
-        _notifyIcon.ContextMenuStrip.Items.Add(exitItem);
+        _notifyIcon.ContextMenuStrip.Items.AddRange(new ToolStripItem[]
+        {
+            chooseMouseItem, _alertMenuItem, _startupMenuItem, refreshItem, reportItem, new ToolStripSeparator(), exitItem
+        });
         _notifyIcon.MouseClick += (_, e) =>
         {
             if (e.Button == MouseButtons.Left) OpenConfigurationTool();
         };
 
+        _deviceWatcher = new DeviceChangeWindow(OnDevicesChanged);
         _ = PollLoopAsync(_shutdown.Token);
+    }
+
+    // Cable in/out and dongle changes re-enumerate devices; read again shortly after instead of waiting for the next poll.
+    private async void OnDevicesChanged()
+    {
+        var version = ++_deviceChangeVersion;
+        await Task.Delay(2500);
+        for (var wait = 0; _refreshInProgress && wait < 15; wait++) await Task.Delay(1000);
+        if (version == _deviceChangeVersion && !_shutdown.IsCancellationRequested) await RefreshWithoutStoppingPollLoopAsync();
+    }
+
+    private sealed class DeviceChangeWindow : NativeWindow
+    {
+        private const int WM_DEVICECHANGE = 0x0219;
+        private readonly Action _changed;
+
+        public DeviceChangeWindow(Action changed)
+        {
+            _changed = changed;
+            CreateHandle(new CreateParams());
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_DEVICECHANGE) _changed();
+            base.WndProc(ref m);
+        }
     }
 
     private async Task PollLoopAsync(CancellationToken cancellationToken)
     {
-        if (!MouseChoice.Exists && !await Task.Run(Op1w.IsPresent)) ShowMouseSetup();
+        if (!MouseChoice.Exists && await Task.Run(() => BatteryReader.TryRead((MouseChoice?)null)) is null) ShowMouseSetup();
         await RefreshWithoutStoppingPollLoopAsync();
 
         while (!cancellationToken.IsCancellationRequested)
@@ -106,35 +154,42 @@ internal sealed class TrayAppContext : ApplicationContext
 
         try
         {
-            if (_lastPercent is null) _notifyIcon.Text = $"{MouseName}: checking...";
-
             var mouse = _mouse;
             var reading = await Task.Run(() => ReadWithRetries(mouse));
             if (mouse != _mouse) return;
+            var now = DateTime.UtcNow;
+
             if (reading is null)
             {
-                if (_lastPercent is not int percent)
+                if (_tracker.Percent is not int last)
                 {
-                    UpdateIcon(null, false, $"{MouseName}: no battery value");
+                    UpdateIcon(null, Grey, $"{MouseName}: no battery value");
                     return;
                 }
 
-                var age = DateTime.UtcNow - _lastReadUtc;
-                if (age < TimeSpan.FromMilliseconds(StaleAfterMs))
-                {
-                    UpdateIcon(percent, true, $"{MouseName}: {percent}%");
-                    return;
-                }
+                var age = now - _lastReadUtc;
+                if (age < TimeSpan.FromMilliseconds(StaleAfterMs)) return;
 
                 // Grey icon keeps the last real value so an asleep/off mouse is not shown as unknown.
-                UpdateIcon(percent, false, $"{MouseName}: off or asleep (last {percent}%, {FormatAge(age)} ago)");
+                UpdateIcon(last, Grey, $"{MouseName}: off or asleep (last {last}%, {FormatAge(age)} ago)");
                 return;
             }
 
-            _lastPercent = reading.Percent;
-            _lastReadUtc = DateTime.UtcNow;
-            UpdateIcon(reading.Percent, true, $"{MouseName}: {reading.Percent}%");
-            AppLog.Write($"fresh reading: {reading.Percent}% ({reading.Source}, {reading.VoltageMillivolts} mV)");
+            _deviceName = reading.DeviceName ?? _deviceName;
+            _lastReadUtc = now;
+            var percent = _tracker.Add(reading, now);
+            AppLog.Write($"fresh reading: {reading.Percent}% shown {percent}% ({reading.Source}, {reading.Power}, {reading.VoltageMillivolts} mV)");
+
+            var (fill, status) = _tracker.Power switch
+            {
+                PowerState.Charging => (Blue, $"{percent}%, charging"),
+                PowerState.PluggedFull => (Blue, $"{percent}%, plugged in"),
+                _ => (BatteryColor(percent), _tracker.TimeLeft(now) is { } left ? $"{percent}%, {BatteryTracker.Format(left)}" : $"{percent}%")
+            };
+            UpdateIcon(percent, fill, $"{MouseName}: {status}");
+
+            if (_settings.LowBatteryAlert && _tracker.TakeLowBatterySignal())
+                _notifyIcon.ShowBalloonTip(10_000, "Mouse battery low", $"{MouseName} is at {percent}%.", ToolTipIcon.Warning);
         }
         finally
         {
@@ -142,8 +197,27 @@ internal sealed class TrayAppContext : ApplicationContext
         }
     }
 
+    private static Color BatteryColor(int percent) =>
+        percent < 20 ? Color.FromArgb(220, 45, 45)
+        : percent < 50 ? Color.FromArgb(230, 170, 30)
+        : Color.FromArgb(35, 165, 90);
+
     private static string FormatAge(TimeSpan age) =>
         age.TotalHours >= 1 ? $"{(int)age.TotalHours} h" : $"{(int)age.TotalMinutes} min";
+
+    private async Task CreateReportAsync()
+    {
+        try
+        {
+            var path = await Task.Run(Report.WriteToDesktop);
+            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
+        }
+        catch (Exception error)
+        {
+            AppLog.Write($"report failed: {error}");
+            MessageBox.Show($"Could not create the report:\n{error.Message}", Installer.DisplayName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
 
     private void ShowMouseSetup()
     {
@@ -160,7 +234,8 @@ internal sealed class TrayAppContext : ApplicationContext
             if (form.ShowDialog() != DialogResult.OK || form.Choice is null) return;
             form.Choice.Save();
             _mouse = form.Choice;
-            _lastPercent = null;
+            _deviceName = null;
+            _tracker.Reset();
             _lastReadUtc = DateTime.MinValue;
             _refreshInProgress = false;
         }
@@ -193,12 +268,12 @@ internal sealed class TrayAppContext : ApplicationContext
         return null;
     }
 
-    private void UpdateIcon(int? percent, bool connected, string text)
+    private void UpdateIcon(int? percent, Color fill, string text)
     {
-        var displayChanged = _displayedPercent != percent || _displayedConnected != connected;
-        if (!connected) AppLog.Write($"display: {text}");
+        var displayChanged = _displayed != (percent, fill);
+        if (fill == Grey) AppLog.Write($"display: {text}");
         var oldIcon = _currentIcon;
-        _currentIcon = CreateIcon(percent, connected);
+        _currentIcon = CreateIcon(percent, fill);
         _notifyIcon.Icon = _currentIcon;
         _notifyIcon.Text = text.Length <= 127 ? text : text[..127];
 
@@ -208,15 +283,14 @@ internal sealed class TrayAppContext : ApplicationContext
             _notifyIcon.Visible = true;
         }
 
-        _displayedPercent = percent;
-        _displayedConnected = connected;
+        _displayed = (percent, fill);
         oldIcon?.Dispose();
     }
 
     protected override void ExitThreadCore()
     {
         _shutdown.Cancel();
-        _shutdown.Dispose();
+        _deviceWatcher.DestroyHandle();
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
         _currentIcon?.Dispose();
@@ -254,10 +328,15 @@ internal sealed class TrayAppContext : ApplicationContext
         return value.Length >= 2 && value[0] == '"' && value[^1] == '"' ? value[1..^1] : value;
     }
 
+    // Opens a maker's configuration tool (named in devices.json) if it was placed beside the app.
     private static void OpenConfigurationTool()
     {
-        var toolPath = Path.Combine(AppContext.BaseDirectory, ConfigToolFileName);
-        if (!File.Exists(toolPath)) return;
+        var toolPath = DeviceList.VendorFeature
+            .Select(d => d.ConfigTool)
+            .OfType<string>()
+            .Select(name => Path.Combine(AppContext.BaseDirectory, name))
+            .FirstOrDefault(File.Exists);
+        if (toolPath is null) return;
 
         try
         {
@@ -274,7 +353,7 @@ internal sealed class TrayAppContext : ApplicationContext
         }
     }
 
-    private static Icon CreateIcon(int? percent, bool connected)
+    private static Icon CreateIcon(int? percent, Color fill)
     {
         using var bitmap = new Bitmap(IconSize, IconSize);
         using var g = Graphics.FromImage(bitmap);
@@ -283,16 +362,7 @@ internal sealed class TrayAppContext : ApplicationContext
         g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
         g.Clear(Color.Transparent);
 
-        var fill = !connected || percent is null
-            ? Color.FromArgb(120, 120, 120)
-            : percent < 20
-                ? Color.FromArgb(220, 45, 45)
-                : percent < 50
-                    ? Color.FromArgb(230, 170, 30)
-                    : Color.FromArgb(35, 165, 90);
-
         using var fillBrush = new SolidBrush(fill);
-
         using var path = RoundedRect(new Rectangle(0, 0, IconSize, IconSize), 18);
         g.FillPath(fillBrush, path);
 
@@ -300,7 +370,7 @@ internal sealed class TrayAppContext : ApplicationContext
         using var font = CreateFittedFont(g, label);
         using var textBrush = new SolidBrush(Color.White);
         using var outlineBrush = new SolidBrush(Color.FromArgb(210, 0, 0, 0));
-        var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+        using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
         var textRect = new RectangleF(-6, -11, IconSize + 12, IconSize + 18);
         DrawTextOutline(g, label, font, outlineBrush, textRect, format);
         g.DrawString(label, font, textBrush, textRect, format);

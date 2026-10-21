@@ -1,0 +1,19 @@
+{
+  "vendorFeature": [
+    {
+      "name": "OP1w 4K v2",
+      "vid": "3367",
+      "pids": { "1970": "wireless", "1984": "wired" },
+      "usagePage": "FF01",
+      "usage": "0002",
+      "reportLength": 64,
+      "command": "A1B4",
+      "reportId": "A1",
+      "statusOffset": 1,
+      "freshStatus": "01",
+      "percentOffset": 16,
+      "voltageOffset": 17,
+      "configTool": "Endgame_Gear_OP1w_4k_v2_Configuration_Tool_v1_02.exe"
+    }
+  ]
+}

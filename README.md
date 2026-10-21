@@ -13,20 +13,24 @@ To update, download the new version and double-click it. To remove the app, go t
 ## Using it
 
 - Green: 50-100%. Yellow: 20-49%. Red: 0-19%.
+- Blue: the mouse is charging or plugged in.
 - Grey: the mouse is off or asleep. The number is the last value the app read.
 - `?`: the app has not read a value yet.
-- Hover over the icon to see the mouse name and battery.
-- Right-click the icon for **Choose mouse...**, **Run at startup**, **Refresh now** and **Exit**.
+- Hover over the icon to see the mouse name, the battery and, after some use, about how long it will last.
+- Right-click the icon for **Choose mouse...**, **Alert at 15%** (off until you turn it on), **Run at startup**, **Refresh now**, **Create report...** and **Exit**.
 
-The app checks the battery once per minute.
+The app checks the battery once per minute, and a few seconds after you plug in or unplug a cable or dongle.
 
 ## Which mice work
 
-- **Endgame Gear OP1w 4K v2**, wireless or on its cable. It needs no setup.
+- **Logitech** mice on a Unifying, Bolt or Lightspeed receiver, on a cable, or on Bluetooth.
+- **Endgame Gear OP1w 4K v2**, wireless or on its cable.
 - **Bluetooth mice** that show their battery in Windows under **Settings > Bluetooth & devices**.
-- **USB-dongle mice** that report battery the standard way (HID Battery Strength or State of Charge).
+- **Other mice** that report battery the standard way (HID Battery Strength or State of Charge).
 
-Mice that need the maker's own software to show battery (for example most Logitech, Razer and SteelSeries mice) do not work yet. The setup window tells you when it cannot read a battery value.
+If your mouse does not work, right-click the icon, click **Create report...** and send the file from your Desktop to the developer.
+
+Mice that use the vendor feature pattern can be added in `devices.json` without new code.
 
 ## For developers
 

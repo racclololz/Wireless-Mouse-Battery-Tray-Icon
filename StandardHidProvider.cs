@@ -3,17 +3,32 @@ using static WirelessMouseBatteryTray.Native;
 namespace WirelessMouseBatteryTray;
 
 // Standard HID battery usages: Generic Device Controls / Battery Strength, Battery System / Absolute State Of Charge or Remaining Capacity.
-internal static class HidBattery
+internal sealed class StandardHidProvider : IBatteryProvider
 {
     private const int InputReport = 0;
     private const int FeatureReport = 2;
+
+    public string Name => "standard HID";
+
+    public BatteryReading? TryRead(MouseTarget target)
+    {
+        foreach (var path in target.HidInterfaces())
+        {
+            if (ReadPath(path) is int percent) return new BatteryReading(percent, null, "HID");
+        }
+
+        return null;
+    }
+
+    public IEnumerable<string> Diagnose(MouseTarget target) =>
+        target.HidInterfaces().Select(path => $"{path}: {ReadPath(path)?.ToString() ?? "-"}");
 
     private static bool IsBatteryUsage(in HIDP_VALUE_CAPS cap) =>
         cap.IsRange == 0 &&
         ((cap.UsagePage == 0x06 && cap.Usage == 0x20) ||
          (cap.UsagePage == 0x85 && cap.Usage is 0x65 or 0x66));
 
-    public static int? TryRead(string path)
+    internal static int? ReadPath(string path)
     {
         using var handle = OpenHid(path, GENERIC_READ | GENERIC_WRITE);
         using var fallback = handle.IsInvalid ? OpenHid(path, 0) : null;

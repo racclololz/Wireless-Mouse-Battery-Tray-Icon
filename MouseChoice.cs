@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace WirelessMouseBatteryTray;
 
@@ -7,9 +6,6 @@ internal sealed record MouseChoice(string DeviceKey, string Name)
 {
     private static readonly string FilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WirelessMouseBatteryTray", "mouse.json");
-
-    [JsonIgnore]
-    public bool IsOp1w => DeviceKey.Contains(Op1w.VendorKey, StringComparison.OrdinalIgnoreCase);
 
     public static bool Exists => File.Exists(FilePath);
 

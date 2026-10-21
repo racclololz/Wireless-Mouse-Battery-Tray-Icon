@@ -17,13 +17,13 @@ internal static class Program
                 return 1;
             }
 
-            Console.WriteLine($"{reading.Percent}% ({reading.Source}, {reading.VoltageMillivolts?.ToString() ?? "unknown"} mV)");
+            Console.WriteLine($"{reading.Percent}% ({reading.DeviceName ?? "mouse"}, {reading.Source}, {reading.Power}, {reading.VoltageMillivolts?.ToString() ?? "unknown"} mV)");
             return 0;
         }
 
         if (args.Any(a => string.Equals(a, "--diag", StringComparison.OrdinalIgnoreCase)))
         {
-            foreach (var line in BatteryReader.Diagnose(MouseChoice.Load()))
+            foreach (var line in Report.Lines())
                 Console.WriteLine(line);
             return 0;
         }
@@ -36,7 +36,7 @@ internal static class Program
             return 0;
         }
 
-        if (!Installer.IsInstalledCopy && Installer.OfferInstall()) return 0;
+        if (Installer.CanInstall && Installer.OfferInstall()) return 0;
 
         using var mutex = new Mutex(true, "WirelessMouseBatteryTray.Singleton", out var created);
         if (!created) return 0;

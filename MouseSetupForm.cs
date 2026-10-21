@@ -135,8 +135,7 @@ internal sealed class MouseSetupForm : Form
             return;
         }
 
-        var key = Devices.DeviceKey(instanceId);
-        var choice = new MouseChoice(key, key.Contains(Op1w.VendorKey, StringComparison.OrdinalIgnoreCase) ? "OP1w" : Devices.Name(path, instanceId));
+        var choice = new MouseChoice(Devices.DeviceKey(instanceId), Devices.Name(path, instanceId));
         _message.Text = $"Found: {choice.Name}\nReading the battery...";
 
         BatteryReading? reading = null;
@@ -150,6 +149,7 @@ internal sealed class MouseSetupForm : Form
         }
 
         if (IsDisposed || Choice is not null || !_done) return;
+        if (reading?.DeviceName is { } deviceName) choice = choice with { Name = deviceName };
         Choice = choice;
         _save.Enabled = true;
         _message.Text = reading is null

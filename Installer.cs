@@ -16,7 +16,10 @@ internal static class Installer
     private static readonly string ShortcutPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.Programs), DisplayName + ".lnk");
 
-    public static bool IsInstalledCopy =>
+    // Only the single-file release exe can copy itself; a dev build's exe needs the dll beside it.
+    public static bool CanInstall => string.IsNullOrEmpty(typeof(Installer).Assembly.Location) && !IsInstalledCopy;
+
+    private static bool IsInstalledCopy =>
         string.Equals(Path.GetFullPath(Environment.ProcessPath!), Path.GetFullPath(InstalledExe), StringComparison.OrdinalIgnoreCase);
 
     // Returns true when this process should exit (it installed and started the installed copy).

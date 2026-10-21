@@ -1,68 +1,153 @@
+using System.Collections.Concurrent;
+
 namespace WirelessMouseBatteryTray;
 
-internal sealed record BatteryReading(int Percent, int? VoltageMillivolts, string Source);
+internal enum PowerState { OnBattery, Charging, PluggedFull }
 
-internal static class BatteryReader
+internal sealed record BatteryReading(
+    int Percent,
+    int? VoltageMillivolts,
+    string Source,
+    PowerState Power = PowerState.OnBattery,
+    string? DeviceName = null);
+
+internal interface IBatteryProvider
 {
-    public static BatteryReading? TryRead(MouseChoice? mouse) =>
-        mouse is null || mouse.IsOp1w ? Op1w.TryRead() : TryReadStandard(mouse.DeviceKey);
+    string Name { get; }
+    BatteryReading? TryRead(MouseTarget target);
+    IEnumerable<string> Diagnose(MouseTarget target);
+}
 
-    public static IEnumerable<string> Diagnose(MouseChoice? mouse)
+// One present mouse, resolved from its device key. Container groups every devnode of the same physical device or dongle.
+internal sealed record MouseTarget(string DeviceKey, string InstanceId, Guid? Container, ushort Vid, ushort Pid)
+{
+    public bool HasOwnContainer => Container is Guid c && c != Devices.LocalMachineContainer;
+
+    public IEnumerable<string> HidInterfaces() =>
+        HasOwnContainer
+            ? Devices.Interfaces(Devices.HidInterface).Where(p => Devices.InstanceId(p) is string id && Devices.ContainerId(id) == Container)
+            : [];
+
+    public static MouseTarget Absent(string deviceKey)
     {
-        if (mouse is null || mouse.IsOp1w)
-        {
-            foreach (var line in Op1w.Diagnose()) yield return line;
-            yield break;
-        }
-
-        yield return $"mouse: {mouse.Name} ({mouse.DeviceKey})";
-        var instanceId = FindMouse(mouse.DeviceKey);
-        if (instanceId is null)
-        {
-            yield return "mouse not connected";
-            yield break;
-        }
-
-        var container = Devices.ContainerId(instanceId);
-        yield return $"instance: {instanceId}";
-        yield return $"container: {container}";
-        if (container is null || container == Devices.LocalMachineContainer) yield break;
-
-        foreach (var id in Devices.PresentInstanceIds().Where(id => Devices.ContainerId(id) == container))
-            yield return $"devnode: {id} bluetooth battery: {Devices.BluetoothBattery(id)?.ToString() ?? "-"}";
-
-        foreach (var path in Devices.Interfaces(Devices.HidInterface).Where(p => InContainer(p, container.Value)))
-            yield return $"hid: {path} battery usage: {HidBattery.TryRead(path)?.ToString() ?? "-"}";
+        var ids = Devices.ParseIds(deviceKey);
+        return new MouseTarget(deviceKey, "", null, ids?.Vid ?? 0, ids?.Pid ?? 0);
     }
 
-    private static BatteryReading? TryReadStandard(string deviceKey)
+    public static MouseTarget FromInstanceId(string instanceId)
     {
-        var instanceId = FindMouse(deviceKey);
-        if (instanceId is null) return null;
+        var ids = Devices.ParseIds(instanceId);
+        return new MouseTarget(Devices.DeviceKey(instanceId), instanceId, Devices.ContainerId(instanceId), ids?.Vid ?? 0, ids?.Pid ?? 0);
+    }
+}
 
-        var container = Devices.ContainerId(instanceId);
-        if (container is null || container == Devices.LocalMachineContainer) return null;
+internal sealed class BluetoothProvider : IBatteryProvider
+{
+    public string Name => "bluetooth";
 
+    public BatteryReading? TryRead(MouseTarget target)
+    {
+        if (!target.HasOwnContainer) return null;
         foreach (var id in Devices.PresentInstanceIds())
         {
-            if (Devices.ContainerId(id) == container && Devices.BluetoothBattery(id) is int percent)
+            if (Devices.ContainerId(id) == target.Container && Devices.BluetoothBattery(id) is int percent)
                 return new BatteryReading(percent, null, "bluetooth");
-        }
-
-        foreach (var path in Devices.Interfaces(Devices.HidInterface))
-        {
-            if (InContainer(path, container.Value) && HidBattery.TryRead(path) is int percent)
-                return new BatteryReading(percent, null, "hid");
         }
 
         return null;
     }
 
-    private static string? FindMouse(string deviceKey) =>
+    public IEnumerable<string> Diagnose(MouseTarget target) =>
+        target.HasOwnContainer
+            ? Devices.PresentInstanceIds()
+                .Where(id => Devices.ContainerId(id) == target.Container)
+                .Select(id => $"{id}: {Devices.BluetoothBattery(id)?.ToString() ?? "-"}")
+            : ["no own container"];
+}
+
+internal static class BatteryReader
+{
+    // Device-specific protocols first; the generic Windows sources last.
+    public static readonly IBatteryProvider[] Providers =
+    [
+        new VendorFeatureProvider(),
+        new LogitechProvider(),
+        new BluetoothProvider(),
+        new StandardHidProvider()
+    ];
+
+    private static readonly ConcurrentDictionary<string, IBatteryProvider> WorkingProvider = new(StringComparer.OrdinalIgnoreCase);
+
+    // With no saved mouse, the first present mouse whose battery can be read is used.
+    public static BatteryReading? TryRead(MouseChoice? mouse)
+    {
+        // A saved mouse that is not present still gets a target: the same model on another connection (cable vs dock) can answer.
+        var targets = mouse is null ? PresentMice() : [FindMouse(mouse.DeviceKey) ?? MouseTarget.Absent(mouse.DeviceKey)];
+        foreach (var target in targets)
+        {
+            var reading = TryRead(target);
+            if (reading is not null) return reading;
+        }
+
+        return null;
+    }
+
+    public static BatteryReading? TryRead(MouseTarget target)
+    {
+        if (WorkingProvider.TryGetValue(target.DeviceKey, out var known) && Safe(known, target) is { } fast) return fast;
+
+        foreach (var provider in Providers.Where(p => p != known))
+        {
+            if (Safe(provider, target) is not { } reading) continue;
+            WorkingProvider[target.DeviceKey] = provider;
+            return reading;
+        }
+
+        return null;
+    }
+
+    public static IEnumerable<string> Diagnose(MouseTarget target)
+    {
+        yield return $"mouse: {target.InstanceId}";
+        yield return $"ids: VID {target.Vid:X4} PID {target.Pid:X4}, container {target.Container}";
+        foreach (var provider in Providers)
+        {
+            yield return $"  [{provider.Name}]";
+            List<string> lines;
+            try
+            {
+                lines = provider.Diagnose(target).ToList();
+            }
+            catch (Exception error)
+            {
+                lines = [$"error: {error.Message}"];
+            }
+
+            foreach (var line in lines) yield return "    " + line;
+        }
+    }
+
+    public static IReadOnlyList<MouseTarget> PresentMice() =>
         Devices.Interfaces(Devices.MouseInterface)
             .Select(Devices.InstanceId)
-            .FirstOrDefault(id => id is not null && Devices.DeviceKey(id).Equals(deviceKey, StringComparison.OrdinalIgnoreCase));
+            .OfType<string>()
+            .Select(MouseTarget.FromInstanceId)
+            .DistinctBy(t => t.DeviceKey, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
-    private static bool InContainer(string interfacePath, Guid container) =>
-        Devices.InstanceId(interfacePath) is string id && Devices.ContainerId(id) == container;
+    public static MouseTarget? FindMouse(string deviceKey) =>
+        PresentMice().FirstOrDefault(t => t.DeviceKey.Equals(deviceKey, StringComparison.OrdinalIgnoreCase));
+
+    private static BatteryReading? Safe(IBatteryProvider provider, MouseTarget target)
+    {
+        try
+        {
+            return provider.TryRead(target);
+        }
+        catch (Exception error)
+        {
+            AppLog.Write($"{provider.Name} failed: {error.Message}");
+            return null;
+        }
+    }
 }

@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../BatteryReader.cs;../Op1w.cs;../HidBattery.cs;../Devices.cs;../Native.cs;../MouseChoice.cs" />
+    <Compile Include="../BatteryReader.cs;../VendorFeatureProvider.cs;../StandardHidProvider.cs;../LogitechProvider.cs;../Hidpp.cs;../BatteryTracker.cs;../DeviceList.cs;../Devices.cs;../Native.cs;../MouseChoice.cs" />
+    <EmbeddedResource Include="../devices.json" LogicalName="WirelessMouseBatteryTray.devices.json" />
   </ItemGroup>
 </Project>
