@@ -1,9 +1,10 @@
 {
   "vendorFeature": [
     {
-      "name": "OP1w 4K v2",
+      "name": "Endgame Gear",
       "vid": "3367",
       "pids": { "1970": "wireless", "1984": "wired" },
+      "allProducts": true,
       "usagePage": "FF01",
       "usage": "0002",
       "reportLength": 64,

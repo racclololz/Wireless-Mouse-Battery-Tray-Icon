@@ -24,7 +24,7 @@ The app checks the battery once per minute, and a few seconds after you plug in 
 ## Which mice work
 
 - **Logitech** mice on a Unifying, Bolt or Lightspeed receiver, on a cable, or on Bluetooth.
-- **Endgame Gear OP1w 4K v2**, wireless or on its cable.
+- **Endgame Gear** wireless mice, wireless or on their cable.
 - **Bluetooth mice** that show their battery in Windows under **Settings > Bluetooth & devices**.
 - **Other mice** that report battery the standard way (HID Battery Strength or State of Charge).
 

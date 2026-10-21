@@ -10,7 +10,7 @@ static Native.HIDP_VALUE_CAPS Cap(int min, int max, ushort bits) =>
     new() { LogicalMin = min, LogicalMax = max, BitSize = bits };
 
 // OP1w via the device list
-var op1w = DeviceList.VendorFeature.Single(d => d.Name == "OP1w 4K v2");
+var op1w = DeviceList.VendorFeature.Single(d => d.Name == "Endgame Gear");
 static byte[] Reply(byte status, byte percent)
 {
     var result = new byte[64];
@@ -31,6 +31,8 @@ Check(reading is { Percent: 45, VoltageMillivolts: 3786, Power: PowerState.OnBat
 Check(VendorFeatureProvider.ParseResponse(op1w, Reply(0x01, 45), true)?.Power == PowerState.Charging, "OP1w on cable below 100% is charging");
 Check(VendorFeatureProvider.ParseResponse(op1w, Reply(0x01, 100), true)?.Power == PowerState.PluggedFull, "OP1w on cable at 100% is plugged in");
 Check(VendorFeatureProvider.Match(new MouseTarget("k", "", null, 0x3367, 0x1984)) == op1w, "OP1w wired PID matches the same entry");
+Check(VendorFeatureProvider.Match(new MouseTarget("k", "", null, 0x3367, 0x19A0)) == op1w, "another Endgame Gear product matches the same entry");
+Check(VendorFeatureProvider.Match(new MouseTarget("k", "", null, 0x3368, 0x1970)) is null, "another vendor does not match");
 
 // Device ids
 Check(Devices.ParseIds(@"HID\VID_046D&PID_C539&MI_01&Col01") == (0x046D, 0xC539), "USB ids parse");
