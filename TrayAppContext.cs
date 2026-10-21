@@ -1,7 +1,4 @@
 using System.Diagnostics;
-using System.Drawing.Drawing2D;
-using System.Drawing.Text;
-using System.Runtime.InteropServices;
 using Microsoft.Win32;
 
 namespace WirelessMouseBatteryTray;
@@ -10,7 +7,6 @@ internal sealed class TrayAppContext : ApplicationContext
 {
     internal const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     internal const string RunValueName = "WirelessMouseBatteryTray";
-    private const int IconSize = 128;
     private const int PollIntervalMs = 60_000;
     private const int StaleAfterMs = 5 * PollIntervalMs;
 
@@ -70,7 +66,7 @@ internal sealed class TrayAppContext : ApplicationContext
         _notifyIcon = new NotifyIcon
         {
             Text = $"{MouseName}: checking...",
-            Icon = CreateIcon(null, Grey),
+            Icon = TrayIcon.Create(null, Grey, TrayIcon.TaskbarIconSize()),
             Visible = true,
             ContextMenuStrip = new ContextMenuStrip()
         };
@@ -273,7 +269,7 @@ internal sealed class TrayAppContext : ApplicationContext
         var displayChanged = _displayed != (percent, fill);
         if (fill == Grey) AppLog.Write($"display: {text}");
         var oldIcon = _currentIcon;
-        _currentIcon = CreateIcon(percent, fill);
+        _currentIcon = TrayIcon.Create(percent, fill, TrayIcon.TaskbarIconSize());
         _notifyIcon.Icon = _currentIcon;
         _notifyIcon.Text = text.Length <= 127 ? text : text[..127];
 
@@ -352,92 +348,4 @@ internal sealed class TrayAppContext : ApplicationContext
             // Keep the tray app battery-only if the optional vendor tool fails to launch.
         }
     }
-
-    private static Icon CreateIcon(int? percent, Color fill)
-    {
-        using var bitmap = new Bitmap(IconSize, IconSize);
-        using var g = Graphics.FromImage(bitmap);
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-        g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-        g.Clear(Color.Transparent);
-
-        using var fillBrush = new SolidBrush(fill);
-        using var path = RoundedRect(new Rectangle(0, 0, IconSize, IconSize), 18);
-        g.FillPath(fillBrush, path);
-
-        var label = percent is null ? "?" : percent.Value.ToString();
-        using var font = CreateFittedFont(g, label);
-        using var textBrush = new SolidBrush(Color.White);
-        using var outlineBrush = new SolidBrush(Color.FromArgb(210, 0, 0, 0));
-        using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-        var textRect = new RectangleF(-6, -11, IconSize + 12, IconSize + 18);
-        DrawTextOutline(g, label, font, outlineBrush, textRect, format);
-        g.DrawString(label, font, textBrush, textRect, format);
-
-        var handle = bitmap.GetHicon();
-        try
-        {
-            return (Icon)Icon.FromHandle(handle).Clone();
-        }
-        finally
-        {
-            DestroyIcon(handle);
-        }
-    }
-
-    private static Font CreateFittedFont(Graphics g, string label)
-    {
-        var size = label.Length >= 3 ? 74f : 104f;
-        while (size > 28f)
-        {
-            var font = new Font("Segoe UI", size, FontStyle.Bold, GraphicsUnit.Pixel);
-            var measured = g.MeasureString(label, font);
-            if (measured.Width <= IconSize + 12f && measured.Height <= IconSize + 4f) return font;
-            font.Dispose();
-            size -= 1f;
-        }
-
-        return new Font("Segoe UI", 28f, FontStyle.Bold, GraphicsUnit.Pixel);
-    }
-
-    private static void DrawTextOutline(Graphics g, string label, Font font, Brush brush, RectangleF textRect, StringFormat format)
-    {
-        const float outline = 4f;
-        var offsets = new[]
-        {
-            new PointF(-outline, 0),
-            new PointF(outline, 0),
-            new PointF(0, -outline),
-            new PointF(0, outline),
-            new PointF(-outline, -outline),
-            new PointF(outline, -outline),
-            new PointF(-outline, outline),
-            new PointF(outline, outline)
-        };
-
-        foreach (var offset in offsets)
-        {
-            g.DrawString(label, font, brush, new RectangleF(
-                textRect.X + offset.X,
-                textRect.Y + offset.Y,
-                textRect.Width,
-                textRect.Height), format);
-        }
-    }
-
-    private static GraphicsPath RoundedRect(Rectangle bounds, int radius)
-    {
-        var path = new GraphicsPath();
-        var diameter = radius * 2;
-        path.AddArc(bounds.X, bounds.Y, diameter, diameter, 180, 90);
-        path.AddArc(bounds.Right - diameter, bounds.Y, diameter, diameter, 270, 90);
-        path.AddArc(bounds.Right - diameter, bounds.Bottom - diameter, diameter, diameter, 0, 90);
-        path.AddArc(bounds.X, bounds.Bottom - diameter, diameter, diameter, 90, 90);
-        path.CloseFigure();
-        return path;
-    }
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool DestroyIcon(IntPtr hIcon);
 }
