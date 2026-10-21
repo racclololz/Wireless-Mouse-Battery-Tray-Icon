@@ -5,11 +5,8 @@ A small Windows app that shows your wireless mouse battery as a number in the ta
 ## Install
 
 1. Download `WirelessMouseBatteryTray.exe` from the [latest release](https://github.com/racclololz/Wireless-Mouse-Battery-Tray-Icon/releases/latest).
-2. Double-click it. If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**. The app is not signed, so Windows warns about it.
-3. Click **Yes** to install. No admin rights are needed, and the app starts with Windows from then on.
-4. If the app does not find a supported mouse, a window opens. Click the left button and then the right button of your mouse inside it, then click **Save**.
-
-The battery number may be hidden under the **^** arrow next to the clock. Drag it onto the taskbar to keep it visible.
+2. Double-click it and click **Yes** to install. No admin rights are needed, and the app starts with Windows from then on.
+3. If the app does not find a supported mouse, a window opens. Click the left button and then the right button of your mouse inside it, then click **Save**.
 
 To update, download the new version and double-click it. To remove the app, go to **Settings > Apps > Installed apps**, find **Wireless Mouse Battery Tray** and click **Uninstall**.
 
