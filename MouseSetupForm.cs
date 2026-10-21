@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
-using static OP1wBatteryTray.Native;
+using static WirelessMouseBatteryTray.Native;
 
-namespace OP1wBatteryTray;
+namespace WirelessMouseBatteryTray;
 
 // Identifies the mouse by which raw input device sends a left click, then a right click.
 internal sealed class MouseSetupForm : Form

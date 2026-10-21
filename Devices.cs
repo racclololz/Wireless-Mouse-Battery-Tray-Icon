@@ -1,7 +1,7 @@
 using System.Text;
-using static OP1wBatteryTray.Native;
+using static WirelessMouseBatteryTray.Native;
 
-namespace OP1wBatteryTray;
+namespace WirelessMouseBatteryTray;
 
 internal static class Devices
 {

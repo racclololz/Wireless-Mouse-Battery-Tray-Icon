@@ -1,6 +1,6 @@
-using static OP1wBatteryTray.Native;
+using static WirelessMouseBatteryTray.Native;
 
-namespace OP1wBatteryTray;
+namespace WirelessMouseBatteryTray;
 
 // Endgame Gear OP1w 4K v2 vendor protocol: SET feature A1 B4, then GET feature A1.
 // response[1]: 01 = fresh answer from the mouse, 03 = dock busy, 08 = mouse not answering (dock repeats its cached values).

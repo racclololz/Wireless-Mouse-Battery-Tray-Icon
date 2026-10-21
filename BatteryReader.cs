@@ -1,4 +1,4 @@
-namespace OP1wBatteryTray;
+namespace WirelessMouseBatteryTray;
 
 internal sealed record BatteryReading(int Percent, int? VoltageMillivolts, string Source);
 

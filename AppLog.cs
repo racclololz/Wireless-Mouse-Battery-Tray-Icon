@@ -1,10 +1,10 @@
-namespace OP1wBatteryTray;
+namespace WirelessMouseBatteryTray;
 
 internal static class AppLog
 {
     private static readonly object Gate = new();
     private static readonly string Folder = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OP1wBatteryTray");
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WirelessMouseBatteryTray");
 
     internal static void Write(string message)
     {

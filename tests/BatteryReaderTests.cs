@@ -1,4 +1,4 @@
-using OP1wBatteryTray;
+using WirelessMouseBatteryTray;
 
 static byte[] Reply(byte status, byte percent)
 {
@@ -32,7 +32,7 @@ Check(HidBattery.Scale(128, Cap(0, -1, 8)) == 50, "unsigned 8-bit max encoded as
 Check(HidBattery.Scale(255, Cap(0, 255, 8)) == 100, "0-255 full scale is 100%");
 Check(HidBattery.Scale(101, Cap(0, 100, 8)) is null, "value above logical max is rejected");
 
-namespace OP1wBatteryTray
+namespace WirelessMouseBatteryTray
 {
     internal static class AppLog
     {

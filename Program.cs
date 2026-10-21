@@ -1,7 +1,7 @@
 using System.Threading;
 using System.Windows.Forms;
 
-namespace OP1wBatteryTray;
+namespace WirelessMouseBatteryTray;
 
 internal static class Program
 {
@@ -28,10 +28,19 @@ internal static class Program
             return 0;
         }
 
-        using var mutex = new Mutex(true, "OP1wBatteryTray.Singleton", out var created);
+        ApplicationConfiguration.Initialize();
+
+        if (args.Any(a => string.Equals(a, "--uninstall", StringComparison.OrdinalIgnoreCase)))
+        {
+            Installer.Uninstall();
+            return 0;
+        }
+
+        if (!Installer.IsInstalledCopy && Installer.OfferInstall()) return 0;
+
+        using var mutex = new Mutex(true, "WirelessMouseBatteryTray.Singleton", out var created);
         if (!created) return 0;
 
-        ApplicationConfiguration.Initialize();
         Application.Run(new TrayAppContext());
         return 0;
     }

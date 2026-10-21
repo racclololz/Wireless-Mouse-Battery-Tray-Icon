@@ -1,36 +1,52 @@
-# OP1w 4K v2 Battery Tray Icon
+# Wireless Mouse Battery Tray Icon
 
-Windows tray icon that shows the battery percentage for the Endgame Gear OP1w 4K v2, and for other mice that report their battery to Windows.
+A small Windows app that shows your wireless mouse battery as a number in the taskbar, next to the clock.
 
-## Features
+## Install
 
-- Battery percentage shown directly in the tray icon
-- Green at 50-100%, yellow at 20-49%, red at 0-19%
-- Grey with the last known value when the mouse is off or asleep for more than 5 minutes
-- Polls once per minute
-- Right-click menu: Choose mouse, Run at startup, Refresh now, Exit
-- Left-click opens the official Endgame Gear config tool if it is placed beside the app
+1. Download `WirelessMouseBatteryTray.exe` from the [latest release](https://github.com/racclololz/Wireless-Mouse-Battery-Tray-Icon/releases/latest).
+2. Double-click it. If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**. The app is not signed, so Windows warns about it.
+3. Click **Yes** to install. No admin rights are needed, and the app starts with Windows from then on.
+4. If the app does not find a supported mouse, a window opens. Click the left button and then the right button of your mouse inside it, then click **Save**.
 
-## Choosing a mouse
+The battery number may be hidden under the **^** arrow next to the clock. Drag it onto the taskbar to keep it visible.
 
-Right-click the tray icon and pick "Choose mouse...". Click the left button and then the right button of the mouse you want to track. The app finds which device sent the clicks and saves it to `%APPDATA%\OP1wBatteryTray\mouse.json`.
+To update, download the new version and double-click it. To remove the app, go to **Settings > Apps > Installed apps**, find **Wireless Mouse Battery Tray** and click **Uninstall**.
 
-On first start the window opens by itself if no OP1w is connected.
+## Using it
 
-## Supported devices
+- Green: 50-100%. Yellow: 20-49%. Red: 0-19%.
+- Grey: the mouse is off or asleep. The number is the last value the app read.
+- `?`: the app has not read a value yet.
+- Hover over the icon to see the mouse name and battery.
+- Right-click the icon for **Choose mouse...**, **Run at startup**, **Refresh now** and **Exit**.
 
-- Endgame Gear OP1w 4K v2, through its vendor protocol
-  - Dock/dongle: VID_3367&PID_1970
-  - Wired fallback: VID_3367&PID_1984
-- Bluetooth mice whose battery shows in Windows Settings > Bluetooth & devices
-- USB or wireless mice that expose a standard HID battery value (Battery Strength or State of Charge)
+The app checks the battery once per minute.
 
-Mice that use a brand-only protocol (for example Logitech HID++, Razer, SteelSeries) are not supported. The setup window says so when it cannot read a value.
+## Which mice work
 
-## Build
+- **Endgame Gear OP1w 4K v2**, wireless or on its cable. It needs no setup.
+- **Bluetooth mice** that show their battery in Windows under **Settings > Bluetooth & devices**.
+- **USB-dongle mice** that report battery the standard way (HID Battery Strength or State of Charge).
+
+Mice that need the maker's own software to show battery (for example most Logitech, Razer and SteelSeries mice) do not work yet. The setup window tells you when it cannot read a battery value.
+
+## For developers
 
 Requires Windows and the .NET 8 SDK.
 
+Build the single-file exe that goes on the release page:
+
 ```powershell
-dotnet publish . -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+dotnet publish WirelessMouseBatteryTray.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o publish
 ```
+
+Run the tests:
+
+```powershell
+dotnet run --project tests/BatteryTests.csproj
+```
+
+Command-line options: `--once` prints one reading, `--diag` prints what the app finds for the chosen mouse, and `--uninstall` removes the installed app.
+
+Settings are in `%APPDATA%\WirelessMouseBatteryTray\mouse.json`. The log is in `%LOCALAPPDATA%\WirelessMouseBatteryTray\battery.log`.

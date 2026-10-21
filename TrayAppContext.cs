@@ -4,12 +4,12 @@ using System.Drawing.Text;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
 
-namespace OP1wBatteryTray;
+namespace WirelessMouseBatteryTray;
 
 internal sealed class TrayAppContext : ApplicationContext
 {
-    private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string RunValueName = "OP1wBatteryTray";
+    internal const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    internal const string RunValueName = "WirelessMouseBatteryTray";
     private const string ConfigToolFileName = "Endgame_Gear_OP1w_4k_v2_Configuration_Tool_v1_02.exe";
     private const int IconSize = 128;
     private const int PollIntervalMs = 60_000;
@@ -27,7 +27,7 @@ internal sealed class TrayAppContext : ApplicationContext
     private MouseChoice? _mouse = MouseChoice.Load();
     private MouseSetupForm? _setupForm;
 
-    private string MouseName => _mouse?.Name ?? "OP1w";
+    private string MouseName => _mouse?.Name ?? "Mouse";
 
     public TrayAppContext()
     {

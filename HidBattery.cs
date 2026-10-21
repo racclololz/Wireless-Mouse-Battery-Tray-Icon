@@ -1,6 +1,6 @@
-using static OP1wBatteryTray.Native;
+using static WirelessMouseBatteryTray.Native;
 
-namespace OP1wBatteryTray;
+namespace WirelessMouseBatteryTray;
 
 // Standard HID battery usages: Generic Device Controls / Battery Strength, Battery System / Absolute State Of Charge or Remaining Capacity.
 internal static class HidBattery
