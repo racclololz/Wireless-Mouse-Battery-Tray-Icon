@@ -19,19 +19,27 @@ internal static class Op1w
         foreach (var target in EnumerateTargets())
         {
             var response = Query(target.Path);
-            if (response is null || response[1] != 0x01) continue;
-
-            var percent = response[16];
-            if (percent > 100) continue;
-
-            int? voltage = null;
-            var rawVoltage = response[17] | (response[18] << 8);
-            if (rawVoltage is > 2500 and < 5000) voltage = rawVoltage;
-
-            return new BatteryReading(percent, voltage, target.Source);
+            if (response is null) continue;
+            AppLog.Write($"battery response: status=0x{response[1]:X2}, rawPercent={response[16]}");
+            var reading = ParseResponse(response, target.Source);
+            if (reading is not null) return reading;
         }
 
         return null;
+    }
+
+    internal static BatteryReading? ParseResponse(byte[] response, string source)
+    {
+        if (response.Length < 19 || response[0] != 0xA1 || response[1] != 0x01) return null;
+
+        var percent = response[16];
+        if (percent > 100) return null;
+
+        int? voltage = null;
+        var rawVoltage = response[17] | (response[18] << 8);
+        if (rawVoltage is > 2500 and < 5000) voltage = rawVoltage;
+
+        return new BatteryReading(percent, voltage, source);
     }
 
     public static IEnumerable<string> Diagnose()
@@ -66,7 +74,11 @@ internal static class Op1w
         var command = new byte[64];
         command[0] = 0xA1;
         command[1] = 0xB4;
-        if (!HidD_SetFeature(handle, command, command.Length)) return null;
+        if (!HidD_SetFeature(handle, command, command.Length))
+        {
+            AppLog.Write($"battery request failed: {System.Runtime.InteropServices.Marshal.GetLastWin32Error()}");
+            return null;
+        }
 
         var response = new byte[64];
         for (var waited = 0; waited < AnswerTimeoutMs; waited += AnswerPollMs)
@@ -74,7 +86,11 @@ internal static class Op1w
             Thread.Sleep(AnswerPollMs);
             Array.Clear(response);
             response[0] = 0xA1;
-            if (!HidD_GetFeature(handle, response, response.Length)) return null;
+            if (!HidD_GetFeature(handle, response, response.Length))
+            {
+                AppLog.Write($"battery response failed: {System.Runtime.InteropServices.Marshal.GetLastWin32Error()}");
+                return null;
+            }
             if (response[0] != 0xA1) return null;
             if (response[1] == 0x01) break;
         }

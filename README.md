@@ -8,7 +8,7 @@ Windows tray icon that shows the battery percentage for the Endgame Gear OP1w 4K
 - Green at 50-100%, yellow at 20-49%, red at 0-19%
 - Grey with the last known value when the mouse is off or asleep for more than 5 minutes
 - Polls once per minute
-- Right-click menu: Choose mouse, Run at startup, Exit
+- Right-click menu: Choose mouse, Run at startup, Refresh now, Exit
 - Left-click opens the official Endgame Gear config tool if it is placed beside the app
 
 ## Choosing a mouse
@@ -26,11 +26,6 @@ On first start the window opens by itself if no OP1w is connected.
 - USB or wireless mice that expose a standard HID battery value (Battery Strength or State of Charge)
 
 Mice that use a brand-only protocol (for example Logitech HID++, Razer, SteelSeries) are not supported. The setup window says so when it cannot read a value.
-
-## Command line
-
-- `--once` prints one reading for the saved mouse
-- `--diag` prints what the app finds for the saved mouse
 
 ## Build
 

@@ -53,6 +53,9 @@ internal sealed class TrayAppContext : ApplicationContext
         };
         _notifyIcon.ContextMenuStrip.Items.Add(chooseMouseItem);
         _notifyIcon.ContextMenuStrip.Items.Add(_startupMenuItem);
+        var refreshItem = new ToolStripMenuItem("Refresh now");
+        refreshItem.Click += async (_, _) => await RefreshWithoutStoppingPollLoopAsync();
+        _notifyIcon.ContextMenuStrip.Items.Add(refreshItem);
         _notifyIcon.ContextMenuStrip.Items.Add(new ToolStripSeparator());
         _notifyIcon.ContextMenuStrip.Items.Add(exitItem);
         _notifyIcon.MouseClick += (_, e) =>
@@ -89,8 +92,9 @@ internal sealed class TrayAppContext : ApplicationContext
         {
             await RefreshAsync();
         }
-        catch
+        catch (Exception error)
         {
+            AppLog.Write($"refresh failed: {error}");
             _refreshInProgress = false;
         }
     }
@@ -130,6 +134,7 @@ internal sealed class TrayAppContext : ApplicationContext
             _lastPercent = reading.Percent;
             _lastReadUtc = DateTime.UtcNow;
             UpdateIcon(reading.Percent, true, $"{MouseName}: {reading.Percent}%");
+            AppLog.Write($"fresh reading: {reading.Percent}% ({reading.Source}, {reading.VoltageMillivolts} mV)");
         }
         finally
         {
@@ -191,6 +196,7 @@ internal sealed class TrayAppContext : ApplicationContext
     private void UpdateIcon(int? percent, bool connected, string text)
     {
         var displayChanged = _displayedPercent != percent || _displayedConnected != connected;
+        if (!connected) AppLog.Write($"display: {text}");
         var oldIcon = _currentIcon;
         _currentIcon = CreateIcon(percent, connected);
         _notifyIcon.Icon = _currentIcon;
