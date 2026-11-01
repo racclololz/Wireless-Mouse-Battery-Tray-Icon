@@ -28,6 +28,7 @@ internal sealed class TrayAppContext : ApplicationContext
     private AppSettings _settings = AppSettings.Load();
     private MouseSetupForm? _setupForm;
     private string? _deviceName;
+    private LastReading? _lastSaved = LastReading.Load();
     private readonly DeviceChangeWindow _deviceWatcher;
     private int _deviceChangeVersion;
 
@@ -169,7 +170,10 @@ internal sealed class TrayAppContext : ApplicationContext
             {
                 if (_tracker.Percent is not int last)
                 {
-                    UpdateIcon(null, Grey, $"{MouseName}: no battery value");
+                    if (_lastSaved is { } saved)
+                        UpdateIcon(saved.Percent, Grey, $"{saved.Name ?? MouseName}: off or asleep (last {saved.Percent}%, {FormatAge(now - saved.TimeUtc)} ago)");
+                    else
+                        UpdateIcon(null, Grey, $"{MouseName}: no battery value");
                     return;
                 }
 
@@ -185,6 +189,11 @@ internal sealed class TrayAppContext : ApplicationContext
             _lastReadUtc = now;
             var percent = _tracker.Add(reading, now);
             AppLog.Write($"fresh reading: {reading.Percent}% shown {percent}% ({reading.Source}, {reading.Power}, {reading.VoltageMillivolts} mV)");
+            if (_lastSaved?.Percent != percent || now - _lastSaved.TimeUtc > TimeSpan.FromMinutes(10))
+            {
+                _lastSaved = new LastReading(percent, now, MouseName);
+                _lastSaved.Save();
+            }
 
             var (fill, status) = _tracker.Power switch
             {
@@ -242,6 +251,8 @@ internal sealed class TrayAppContext : ApplicationContext
             _mouse = form.Choice;
             _deviceName = null;
             _tracker.Reset();
+            _lastSaved = null;
+            LastReading.Delete();
             _lastReadUtc = DateTime.MinValue;
             _refreshInProgress = false;
         }

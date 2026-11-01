@@ -76,8 +76,21 @@ internal sealed class VendorFeatureProvider : IBatteryProvider
         using var handle = OpenHid(path, GENERIC_READ | GENERIC_WRITE);
         if (handle.IsInvalid) return null;
 
+        var response = Exchange(device, handle, device.CommandBytes);
+        if (response is null || response[device.StatusOffset] == device.FreshStatusValue || device.WakeBytes is not { } wake) return response;
+
+        // The OP1w dock can stay on "mouse not answering" while the mouse is in use; its own tool sends A1 0F 01
+        // before every command. Send it, then ask again, and log whether it helped.
+        Exchange(device, handle, wake);
+        var retry = Exchange(device, handle, device.CommandBytes);
+        AppLog.Write($"{device.Name} wake sent: status after=0x{retry?[device.StatusOffset]:X2}");
+        return retry ?? response;
+    }
+
+    private static byte[]? Exchange(VendorFeatureDevice device, Microsoft.Win32.SafeHandles.SafeFileHandle handle, byte[] request)
+    {
         var command = new byte[device.ReportLength];
-        device.CommandBytes.CopyTo(command, 0);
+        request.CopyTo(command, 0);
         if (!HidD_SetFeature(handle, command, command.Length))
         {
             AppLog.Write($"{device.Name} request failed: {Marshal.GetLastWin32Error()}");

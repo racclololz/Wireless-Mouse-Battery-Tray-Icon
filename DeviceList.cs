@@ -18,7 +18,8 @@ internal sealed record VendorFeatureDevice(
     string FreshStatus,
     int PercentOffset,
     int? VoltageOffset,
-    bool AllProducts = false)
+    bool AllProducts = false,
+    string? WakeCommand = null)
 {
     public ushort VendorId => Hex16(Vid);
     public ushort UsagePageValue => Hex16(UsagePage);
@@ -26,6 +27,7 @@ internal sealed record VendorFeatureDevice(
     public byte ReportIdValue => Convert.ToByte(ReportId, 16);
     public byte FreshStatusValue => Convert.ToByte(FreshStatus, 16);
     public byte[] CommandBytes => Convert.FromHexString(Command);
+    public byte[]? WakeBytes => WakeCommand is null ? null : Convert.FromHexString(WakeCommand);
     // AllProducts: any product of this vendor that exposes the matching collection; Pids then only mark wired connections.
     public bool HasProduct(ushort pid) => AllProducts || Pids.Keys.Any(p => Hex16(p) == pid);
     public bool IsWired(ushort pid) => Pids.Any(p => Hex16(p.Key) == pid && p.Value == "wired");

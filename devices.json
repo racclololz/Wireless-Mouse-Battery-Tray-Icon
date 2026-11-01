@@ -13,7 +13,8 @@
       "statusOffset": 1,
       "freshStatus": "01",
       "percentOffset": 16,
-      "voltageOffset": 17
+      "voltageOffset": 17,
+      "wakeCommand": "A10F01"
     }
   ]
 }
