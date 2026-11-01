@@ -9,6 +9,8 @@ internal sealed class VendorFeatureProvider : IBatteryProvider
 {
     private const int AnswerTimeoutMs = 2000;
     private const int AnswerPollMs = 100;
+    // Battery polls and polling rate changes share one dock; never interleave their SET/GET pairs.
+    private static readonly object Gate = new();
 
     public string Name => "vendor feature";
 
@@ -19,7 +21,7 @@ internal sealed class VendorFeatureProvider : IBatteryProvider
 
         foreach (var (path, pid) in Interfaces(device))
         {
-            var response = Query(device, path);
+            var response = Query(device, path, device.CommandBytes);
             if (response is null) continue;
             AppLog.Write($"{device.Name} response: status=0x{response[device.StatusOffset]:X2}, rawPercent={response[device.PercentOffset]}");
             var reading = ParseResponse(device, response, device.IsWired(pid));
@@ -40,7 +42,7 @@ internal sealed class VendorFeatureProvider : IBatteryProvider
 
         foreach (var (path, pid) in Interfaces(device))
         {
-            var response = Query(device, path);
+            var response = Query(device, path, device.CommandBytes);
             yield return $"{path} ({(device.IsWired(pid) ? "wired" : "wireless")}): " + (response is null
                 ? $"query failed {Marshal.GetLastWin32Error()}"
                 : string.Join(" ", response.Take(24).Select(b => b.ToString("X2"))));
@@ -71,18 +73,58 @@ internal sealed class VendorFeatureProvider : IBatteryProvider
         return new BatteryReading(percent, voltage, wired ? "wired" : "wireless", power, device.Name);
     }
 
-    private static byte[]? Query(VendorFeatureDevice device, string path)
+    internal static MouseTarget? PollingRateTarget(MouseChoice? mouse) =>
+        (mouse is null ? BatteryReader.PresentMice() : BatteryReader.FindMouse(mouse.DeviceKey) is { } found ? [found] : [])
+        .FirstOrDefault(t => Match(t)?.PollingRateFor(t.Pid) is not null);
+
+    internal static byte? ReadPollingRate(MouseTarget target)
+    {
+        if (Match(target) is not { } device || device.PollingRateFor(target.Pid) is not { } setting) return null;
+        foreach (var (path, _) in Interfaces(device))
+            if (ReadRate(device, setting, path) is { } rate) return rate;
+        return null;
+    }
+
+    internal static bool SetPollingRate(MouseTarget target, byte rate)
+    {
+        if (Match(target) is not { } device || device.PollingRateFor(target.Pid) is not { } setting) return false;
+        foreach (var (path, _) in Interfaces(device))
+        {
+            var response = Query(device, path, setting.WriteBytes(rate));
+            if (response is null || response[device.StatusOffset] != device.FreshStatusValue) continue;
+            var now = ReadRate(device, setting, path);
+            AppLog.Write($"{device.Name} polling rate set 0x{rate:X2}: read back 0x{now:X2}");
+            return now == rate;
+        }
+
+        AppLog.Write($"{device.Name} polling rate set 0x{rate:X2}: no answer");
+        return false;
+    }
+
+    private static byte? ReadRate(VendorFeatureDevice device, PollingRateSetting setting, string path) =>
+        Query(device, path, setting.ReadBytes) is { } response
+        && response[device.StatusOffset] == device.FreshStatusValue
+        && response.Length > setting.ReadOffset
+            ? response[setting.ReadOffset]
+            : null;
+
+    private static byte[]? Query(VendorFeatureDevice device, string path, byte[] command)
+    {
+        lock (Gate) return QueryLocked(device, path, command);
+    }
+
+    private static byte[]? QueryLocked(VendorFeatureDevice device, string path, byte[] command)
     {
         using var handle = OpenHid(path, GENERIC_READ | GENERIC_WRITE);
         if (handle.IsInvalid) return null;
 
-        var response = Exchange(device, handle, device.CommandBytes);
+        var response = Exchange(device, handle, command);
         if (response is null || response[device.StatusOffset] == device.FreshStatusValue || device.WakeBytes is not { } wake) return response;
 
         // The OP1w dock can stay on "mouse not answering" while the mouse is in use; its own tool sends A1 0F 01
         // before every command. Send it, then ask again, and log whether it helped.
         Exchange(device, handle, wake);
-        var retry = Exchange(device, handle, device.CommandBytes);
+        var retry = Exchange(device, handle, command);
         AppLog.Write($"{device.Name} wake sent: status after=0x{retry?[device.StatusOffset]:X2}");
         return retry ?? response;
     }

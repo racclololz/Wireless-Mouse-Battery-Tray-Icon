@@ -22,6 +22,10 @@ static byte[] Reply(byte status, byte percent)
     return result;
 }
 
+var rateSetting = op1w.PollingRateFor(0x1970);
+Check(rateSetting is not null && op1w.PollingRateFor(0x1234) is null, "OP1w polling rate only on its dock and cable");
+Check(Convert.ToHexString(rateSetting!.WriteBytes(0x80)) == "A1150F0A00000000000000000000000000800001080808080805", "OP1w polling rate write matches the traced tool bytes");
+Check(rateSetting.Rates.Select(r => r.Code).SequenceEqual(new byte[] { 0x02, 0x04, 0x08, 0x80, 0x40 }), "OP1w polling rate codes match the tool list");
 Check(VendorFeatureProvider.ParseResponse(op1w, Reply(0x08, 80), false) is null, "OP1w cached 80% is rejected when mouse is unreachable");
 Check(VendorFeatureProvider.ParseResponse(op1w, Reply(0x03, 80), false) is null, "OP1w busy reply is rejected");
 Check(VendorFeatureProvider.ParseResponse(op1w, Reply(0x01, 101), false) is null, "OP1w invalid percentage is rejected");

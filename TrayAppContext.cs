@@ -18,6 +18,8 @@ internal sealed class TrayAppContext : ApplicationContext
     private readonly ToolStripMenuItem _alertMenuItem;
     private readonly ToolStripMenuItem _leftClickMenuItem;
     private readonly ToolStripMenuItem _removeAppMenuItem;
+    private readonly ToolStripMenuItem _pollingMenuItem = new("Polling rate") { Visible = false };
+    private MouseTarget? _pollingTarget;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly BatteryTracker _tracker = new();
     private Icon? _currentIcon;
@@ -83,8 +85,10 @@ internal sealed class TrayAppContext : ApplicationContext
         };
         _notifyIcon.ContextMenuStrip.Items.AddRange(new ToolStripItem[]
         {
-            chooseMouseItem, _leftClickMenuItem, _alertMenuItem, _startupMenuItem, refreshItem, reportItem, new ToolStripSeparator(), exitItem
+            chooseMouseItem, _leftClickMenuItem, _pollingMenuItem, _alertMenuItem, _startupMenuItem, refreshItem, reportItem, new ToolStripSeparator(), exitItem
         });
+        _notifyIcon.ContextMenuStrip.Opening += (_, _) => UpdatePollingMenu();
+        _pollingMenuItem.DropDownOpening += async (_, _) => await ShowCurrentPollingRateAsync();
         _notifyIcon.MouseClick += (_, e) =>
         {
             if (e.Button == MouseButtons.Left) OpenLeftClickApp();
@@ -343,6 +347,47 @@ internal sealed class TrayAppContext : ApplicationContext
         if (string.IsNullOrWhiteSpace(value)) return value;
         value = value.Trim();
         return value.Length >= 2 && value[0] == '"' && value[^1] == '"' ? value[1..^1] : value;
+    }
+
+    private void UpdatePollingMenu()
+    {
+        try
+        {
+            _pollingTarget = VendorFeatureProvider.PollingRateTarget(_mouse);
+        }
+        catch (Exception error)
+        {
+            AppLog.Write($"polling rate target failed: {error.Message}");
+            _pollingTarget = null;
+        }
+
+        var setting = _pollingTarget is { } target ? VendorFeatureProvider.Match(target)?.PollingRateFor(target.Pid) : null;
+        _pollingMenuItem.Visible = setting is not null;
+        if (setting is null || _pollingMenuItem.DropDownItems.Count > 0) return;
+
+        foreach (var option in setting.Rates)
+        {
+            var item = new ToolStripMenuItem(option.Label) { Tag = option.Code };
+            item.Click += async (_, _) => await SetPollingRateAsync(option);
+            _pollingMenuItem.DropDownItems.Add(item);
+        }
+    }
+
+    private async Task ShowCurrentPollingRateAsync()
+    {
+        if (_pollingTarget is not { } target) return;
+        var items = _pollingMenuItem.DropDownItems.OfType<ToolStripMenuItem>().ToList();
+        foreach (var item in items) item.Checked = false;
+        var rate = await Task.Run(() => VendorFeatureProvider.ReadPollingRate(target));
+        foreach (var item in items) item.Checked = rate is { } current && item.Tag is byte code && code == current;
+    }
+
+    private async Task SetPollingRateAsync(PollingRateOption option)
+    {
+        if (_pollingTarget is not { } target) return;
+        if (await Task.Run(() => VendorFeatureProvider.SetPollingRate(target, option.Code))) return;
+        MessageBox.Show($"The mouse did not change to {option.Label}. Move the mouse to wake it, then try again.",
+            Installer.DisplayName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
     }
 
     private void UpdateLeftClickMenu()

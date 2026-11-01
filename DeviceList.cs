@@ -19,7 +19,8 @@ internal sealed record VendorFeatureDevice(
     int PercentOffset,
     int? VoltageOffset,
     bool AllProducts = false,
-    string? WakeCommand = null)
+    string? WakeCommand = null,
+    PollingRateSetting? PollingRate = null)
 {
     public ushort VendorId => Hex16(Vid);
     public ushort UsagePageValue => Hex16(UsagePage);
@@ -31,8 +32,22 @@ internal sealed record VendorFeatureDevice(
     // AllProducts: any product of this vendor that exposes the matching collection; Pids then only mark wired connections.
     public bool HasProduct(ushort pid) => AllProducts || Pids.Keys.Any(p => Hex16(p) == pid);
     public bool IsWired(ushort pid) => Pids.Any(p => Hex16(p.Key) == pid && p.Value == "wired");
+    public PollingRateSetting? PollingRateFor(ushort pid) => PollingRate is { } p && p.Pids.Any(x => Hex16(x) == pid) ? p : null;
 
     private static ushort Hex16(string value) => ushort.Parse(value, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+}
+
+// Read: SET readCommand, the rate code is at readOffset of the fresh answer. Write: writeCommand with {rate} replaced by the code.
+// The OP1w 4K v2 write also carries the other settings of its group (bytes after {rate}); those are the values its own tool wrote.
+internal sealed record PollingRateSetting(List<string> Pids, string ReadCommand, int ReadOffset, string WriteCommand, List<PollingRateOption> Rates)
+{
+    public byte[] ReadBytes => Convert.FromHexString(ReadCommand);
+    public byte[] WriteBytes(byte rate) => Convert.FromHexString(WriteCommand.Replace("{rate}", rate.ToString("X2")));
+}
+
+internal sealed record PollingRateOption(string Label, string Value)
+{
+    public byte Code => Convert.ToByte(Value, 16);
 }
 
 internal sealed record DeviceListData(List<VendorFeatureDevice> VendorFeature);

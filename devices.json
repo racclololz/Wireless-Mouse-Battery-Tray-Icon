@@ -14,7 +14,20 @@
       "freshStatus": "01",
       "percentOffset": 16,
       "voltageOffset": 17,
-      "wakeCommand": "A10F01"
+      "wakeCommand": "A10F01",
+      "pollingRate": {
+        "pids": ["1970", "1984"],
+        "readCommand": "A112",
+        "readOffset": 21,
+        "writeCommand": "A1150F0A00000000000000000000000000{rate}0001080808080805",
+        "rates": [
+          { "label": "4000 Hz", "value": "02" },
+          { "label": "2000 Hz", "value": "04" },
+          { "label": "1000 Hz", "value": "08" },
+          { "label": "1000 Hz (power saving)", "value": "80" },
+          { "label": "125 Hz (office mode)", "value": "40" }
+        ]
+      }
     }
   ]
 }
