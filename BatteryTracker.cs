@@ -8,7 +8,9 @@ internal sealed class BatteryTracker
     public const int LowThreshold = 15;
     private const int RearmThreshold = 20;
 
-    private readonly List<int> _recent = [];
+    private static readonly TimeSpan MaxAge = TimeSpan.FromMinutes(15);
+
+    private readonly List<(DateTime Time, int Percent)> _recent = [];
     private PowerState? _power;
     private (DateTime Time, int Percent)? _dischargeStart;
     private bool _lowSignalled;
@@ -35,9 +37,11 @@ internal sealed class BatteryTracker
             _power = reading.Power;
         }
 
-        _recent.Add(reading.Percent);
+        // Readings from before a long gap (mouse asleep, dock stuck) must not hold the median at an old value.
+        _recent.RemoveAll(r => now - r.Time > MaxAge);
+        _recent.Add((now, reading.Percent));
         if (_recent.Count > Window) _recent.RemoveAt(0);
-        var sorted = _recent.Order().ToList();
+        var sorted = _recent.Select(r => r.Percent).Order().ToList();
         var percent = sorted[sorted.Count / 2];
         Percent = percent;
 

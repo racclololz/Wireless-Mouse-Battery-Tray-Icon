@@ -24,6 +24,12 @@ internal sealed class VendorFeatureProvider : IBatteryProvider
             var response = Query(device, path, device.CommandBytes);
             if (response is null) continue;
             AppLog.Write($"{device.Name} response: status=0x{response[device.StatusOffset]:X2}, rawPercent={response[device.PercentOffset]}");
+            if (IsCachedRepeat(device, response))
+            {
+                AppLog.Write($"{device.Name} first fresh answer repeats the cached value; waiting for the next one");
+                continue;
+            }
+
             var reading = ParseResponse(device, response, device.IsWired(pid));
             if (reading is not null) return reading;
         }
@@ -46,6 +52,27 @@ internal sealed class VendorFeatureProvider : IBatteryProvider
             yield return $"{path} ({(device.IsWired(pid) ? "wired" : "wireless")}): " + (response is null
                 ? $"query failed {Marshal.GetLastWin32Error()}"
                 : string.Join(" ", response.Take(24).Select(b => b.ToString("X2"))));
+        }
+    }
+
+    // After a "not answering" period the dock's first fresh answer can still carry the old cached bytes
+    // (seen: 75% / 3956 mV after 20 h, real value 55% 15 s later). Skip that one answer.
+    private static readonly Dictionary<string, string> CachedData = new();
+
+    internal static bool IsCachedRepeat(VendorFeatureDevice device, byte[] response)
+    {
+        var end = Math.Max(device.PercentOffset + 1, (device.VoltageOffset ?? 0) + 2);
+        if (response.Length < end) return false;
+        var data = Convert.ToHexString(response, device.PercentOffset, end - device.PercentOffset);
+        lock (CachedData)
+        {
+            if (response[device.StatusOffset] != device.FreshStatusValue)
+            {
+                CachedData[device.Name] = data;
+                return false;
+            }
+
+            return CachedData.Remove(device.Name, out var cached) && cached == data;
         }
     }
 
@@ -126,7 +153,36 @@ internal sealed class VendorFeatureProvider : IBatteryProvider
         Exchange(device, handle, wake);
         var retry = Exchange(device, handle, command);
         AppLog.Write($"{device.Name} wake sent: status after=0x{retry?[device.StatusOffset]:X2}");
-        return retry ?? response;
+        if (retry is not null && retry[device.StatusOffset] == device.FreshStatusValue) return retry;
+        return Recover(device, handle, command) ?? retry ?? response;
+    }
+
+    // The wake alone did not clear a 20 h "not answering" state, but starting the vendor tool did. Replay the tool's start
+    // sequence (single GET ~300 ms after each SET, no fast polling) at most every few minutes, and log each status to learn which step helps.
+    private static readonly TimeSpan RecoverEvery = TimeSpan.FromMinutes(5);
+    private static DateTime _lastRecoverUtc = DateTime.MinValue;
+
+    private static byte[]? Recover(VendorFeatureDevice device, Microsoft.Win32.SafeHandles.SafeFileHandle handle, byte[] command)
+    {
+        if (device.RecoveryBytes is not { Count: > 0 } steps || DateTime.UtcNow - _lastRecoverUtc < RecoverEvery) return null;
+        _lastRecoverUtc = DateTime.UtcNow;
+
+        var statuses = new List<string>();
+        byte[]? last = null;
+        foreach (var step in steps.Append(command))
+        {
+            var request = new byte[device.ReportLength];
+            step.CopyTo(request, 0);
+            if (!HidD_SetFeature(handle, request, request.Length)) return null;
+            Thread.Sleep(300);
+            last = new byte[device.ReportLength];
+            last[0] = device.ReportIdValue;
+            if (!HidD_GetFeature(handle, last, last.Length)) return null;
+            statuses.Add($"{Convert.ToHexString(step)}=0x{last[device.StatusOffset]:X2}");
+        }
+
+        AppLog.Write($"{device.Name} recovery: {string.Join(" ", statuses)}");
+        return last;
     }
 
     private static byte[]? Exchange(VendorFeatureDevice device, Microsoft.Win32.SafeHandles.SafeFileHandle handle, byte[] request)

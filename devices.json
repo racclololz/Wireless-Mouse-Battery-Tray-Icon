@@ -15,6 +15,7 @@
       "percentOffset": 16,
       "voltageOffset": 17,
       "wakeCommand": "A10F01",
+      "recoveryCommands": ["A10F01", "A10D", "A10F01", "A10E", "A10F01"],
       "pollingRate": {
         "pids": ["1970", "1984"],
         "readCommand": "A112",

@@ -20,8 +20,10 @@ internal sealed record VendorFeatureDevice(
     int? VoltageOffset,
     bool AllProducts = false,
     string? WakeCommand = null,
-    PollingRateSetting? PollingRate = null)
+    PollingRateSetting? PollingRate = null,
+    List<string>? RecoveryCommands = null)
 {
+    public List<byte[]>? RecoveryBytes => RecoveryCommands?.Select(Convert.FromHexString).ToList();
     public ushort VendorId => Hex16(Vid);
     public ushort UsagePageValue => Hex16(UsagePage);
     public ushort UsageValue => Hex16(Usage);

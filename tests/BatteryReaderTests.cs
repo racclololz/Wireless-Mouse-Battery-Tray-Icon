@@ -34,6 +34,12 @@ var reading = VendorFeatureProvider.ParseResponse(op1w, Reply(0x01, 45), false);
 Check(reading is { Percent: 45, VoltageMillivolts: 3786, Power: PowerState.OnBattery }, "OP1w fresh 45% wireless is on battery");
 Check(VendorFeatureProvider.ParseResponse(op1w, Reply(0x01, 45), true)?.Power == PowerState.Charging, "OP1w on cable below 100% is charging");
 Check(VendorFeatureProvider.ParseResponse(op1w, Reply(0x01, 100), true)?.Power == PowerState.PluggedFull, "OP1w on cable at 100% is plugged in");
+Check(!VendorFeatureProvider.IsCachedRepeat(op1w, Reply(0x08, 75)), "OP1w not-answering reply is remembered, not skipped");
+Check(VendorFeatureProvider.IsCachedRepeat(op1w, Reply(0x01, 75)), "OP1w first fresh reply equal to the cached bytes is skipped");
+Check(!VendorFeatureProvider.IsCachedRepeat(op1w, Reply(0x01, 75)), "OP1w second fresh reply is used");
+VendorFeatureProvider.IsCachedRepeat(op1w, Reply(0x08, 75));
+Check(!VendorFeatureProvider.IsCachedRepeat(op1w, Reply(0x01, 55)), "OP1w fresh reply with new bytes is used at once");
+Check(op1w.RecoveryBytes is { Count: > 0 }, "OP1w has a recovery sequence");
 Check(VendorFeatureProvider.Match(new MouseTarget("k", "", null, 0x3367, 0x1984)) == op1w, "OP1w wired PID matches the same entry");
 Check(VendorFeatureProvider.Match(new MouseTarget("k", "", null, 0x3367, 0x19A0)) == op1w, "another Endgame Gear product matches the same entry");
 Check(VendorFeatureProvider.Match(new MouseTarget("k", "", null, 0x3368, 0x1970)) is null, "another vendor does not match");
@@ -72,6 +78,8 @@ var t0 = new DateTime(2026, 10, 21, 8, 0, 0, DateTimeKind.Utc);
 foreach (var (minute, value) in new[] { (0, 30), (1, 25), (2, 30), (3, 25), (4, 30) })
     tracker.Add(new BatteryReading(value, null, "test"), t0.AddMinutes(minute));
 Check(tracker.Percent == 30, "median holds 30 while the reading steps between 25 and 30");
+tracker.Add(new BatteryReading(55, null, "test"), t0.AddHours(20));
+Check(tracker.Percent == 55, "after a 20 h gap the old readings do not hold the median");
 
 tracker = new BatteryTracker();
 for (var hour = 0; hour <= 4; hour++)
